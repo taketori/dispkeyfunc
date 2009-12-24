@@ -1,0 +1,415 @@
+// dispkeyfunc3.mac
+$mn = "ファンクションキー・バーや押下したキーの機能を図示するマクロ - ";
+// copyright (C) taketori <taketori at x10d.jp>
+// 動作環境は、秀丸(Ver.8.00以上)・HmOutputPane.dll・COMがインストール・読み出し・実行ができ、同梱ファイルの読み出し・実行ができる 環境。秀丸エディッタの実行ファイルと同じフォルダにKEY.TXTが存在すること。
+// 設定によっては、本マクロと同じフォルダにて、ファイルを作成・書き込みできること。
+// 以上の詳細は、配布ファイルに同梱の<README.txt>を参照。本マクロのマニュアルは<dispkeyfunc3.mac.txt>。
+
+//// 設定。設定に当たっては配布ファイルに同梱の<dispkeyfunc3.mac.txt>(マニュアル)を参照。
+$Template = currentmacrofilename + ".template";
+#TimeToExit = 5000;
+#TimeToExec = 2000;
+#FbarCol = 0x28;
+#MakeDat = 0x331;
+#FuncNameLength = 10;
+//// 設定、ここまで ////////////////////
+
+// 終了する条件の時。さっさと終了する。
+if(version < 8.00){
+	message $mn + "\n秀丸のバージョンが8以上の環境でご利用ください。";
+	endmacro;
+}
+if(!existfile($Template)){
+	message $mn + "\nテンプレートファイル " + $Template + " がありません。";
+	endmacro;
+}
+if(#TimeToExit < 300 || #TimeToExec < 300 || #FuncNameLength <= 2){
+	message $mn + "\n設定値が小さすぎます。300ミリ秒以上または3文字以上で設定してください。";
+	endmacro;
+}
+$KEYTXT = hidemarudir + "\\KEY.TXT";
+if(!existfile($KEYTXT)){
+	message $mn + "\nKEY.TXTが秀丸エディッタの実行ファイルと同じフォルダに存在しません。";
+	endmacro;
+}
+$Rscfile = currentmacrodirectory + "\\hmkey.rsc";
+if(!existfile($Rscfile)){
+	message $mn + "\n"+ $Rscfile + "が存在しません。";
+	endmacro;
+}
+
+INIT:
+
+	// 修飾キーのコードから文字列に変換するテーブル。
+	$ModTbl[0][0] = "無";					$ModTbl[0][1] = "Ｓ";
+	$ModTbl[0][2] = "Ｃ";					$ModTbl[0][3] = "SC";
+	$ModTbl[0][4] = "Ａ";					$ModTbl[0][5] = "AS";
+	$ModTbl[0][6] = "AC";					$ModTbl[0][7] = "全";
+	$ModTbl[0][8] = "無";		//disp_fkeyのループを1回回すためのおまじないを使うときに。
+	$ModTbl[1][0] = "";						$ModTbl[1][1] = "Shift+";
+	$ModTbl[1][2] = "Ctrl+";			$ModTbl[1][3] = "Shift+Ctrl+";
+	$ModTbl[1][4] = "Alt+";				$ModTbl[1][5] = "Alt+Shift+";
+	$ModTbl[1][6] = "Alt+Ctrl+";	$ModTbl[1][7] = "Alt+Shift+Ctrl+";
+
+	##objFSO = createobject("Scripting.FileSystemObject");
+	if(!##objFSO)		call end_macro "COMの起動";
+
+	// テンプレートを全部読み込む。
+	##objStream = callmethod_returnobj(##objFSO, "OpenTextFile", $Template);
+	if(!##objStream)		call end_macro $Template + "を開く際", ##objFSO;
+	##mod = 0;																	//修飾キーコード
+	##l = 1;																		//LoopCounter=その修飾キーでの行数
+	while(!getpropnum(##objStream, "AtEndOfStream")){
+		$$s = callmethod_returnstr(##objStream, "ReadLine");
+		if(leftstr($$s, 1) == "."){								//修飾キーコードの切り替え
+			$$template[##mod][0] = str(##l - 1);		//さっきの修飾キーでのテンプレート行数
+			##mod = val(rightstr($$s, 1));
+			##l = 1;
+		}else{																		// 修飾キーごとに、配列に格納。
+			$$template[##mod][##l] = $$s;
+			##l = ##l + 1;
+		}
+	}
+	$$template[##mod][0] = str(##l - 1);				//さっきの修飾キーでのテンプレート行数
+	callmethod ##objStream, "Close";
+	releaseobject ##objStream;
+	if(!getresultex(10))		call end_macro $Template "のクローズ";
+
+	// アウトプット枠を使うための準備。
+	loaddll "HmOutputPane.dll";
+	if(!result)		call end_macro "HmOutputPane.dllの読み込み";
+	##IsOpenOP = true;
+	##hdlOP = dllfunc("GetWindowHandle", hidemaruhandle(0));
+	if(!##hdlOP){
+		##IsOpenOP = false;
+		if(!dllfunc("Output", hidemaruhandle(0), ""))		// GetWindowHandleの返値を得るために、表示させておく。
+			call end_macro "Output枠への表示";
+		else
+			##hdlOP = dllfunc("GetWindowHandle", hidemaruhandle(0));
+		if(!##hdlOP)		call end_macro "Output枠のハンドル取得";
+	}
+	if(##IsOpenOP && dllfunc("Push", hidemaruhandle(0)) == false)	call end_macro "アウトプット枠の内容の待避";
+
+	// KEY.TXTの代わりに、.datファイルを使う。
+	if(#MakeDat & 0xF != 0){
+		call make_dat ##objFSO;
+		if($$return != "")
+			$KEYTXT = $$return;
+	}
+	releaseobject ##objFSO;
+
+MAIN:
+
+	// アウトプット枠の初期表示
+	call disp_fkey #FbarCol, ##hdlOP;
+	if(dllfunc("Output", hidemaruhandle(0), "\n") == false
+	|| dllfunc("Output", hidemaruhandle(0), "\n") == false
+	|| dllfunc("Output", hidemaruhandle(0), "= - " + $mn + "=\n") == false
+	|| dllfunc("Output", hidemaruhandle(0), "   ショートカットキーとその機能は、KEY.TXTの内容を元に表示しています。\n") == false
+	|| dllfunc("Output", hidemaruhandle(0), "   KEY.TXTを更新するには、[キー割り当て]ダイアログの「一覧表作成」ボタンをクリックで。\n") == false
+	|| dllfunc("Output", hidemaruhandle(0), "   (詳細は、秀丸エディッタヘルプの\"KEY.TXT\"を参照)") == false)
+		call end_macro "Output枠への出力";
+
+	##key = 0x0004;
+	##now = tickcount;
+	##disable_time = ((#TimeToExec <= #TimeToExit) * #TimeToExit + (#TimeToExec >  #TimeToExit) * #TimeToExec);		//終了するまでの時間。初期値は、二つの時間の長いほう。
+	while( tickcount <= ##now + ##disable_time){
+		title $mn + str((##now + ##disable_time - tickcount)/1000) + "秒後に自動で閉じます。";
+		refreshdatetime;
+
+		// 押下されている、あらゆるキーのキーコードetcを取得し、返値で処理分岐。
+		call get_key_status;
+		##retF = ##return & 0xF0;
+		if(##key == ##return)		//さっきと同じキー
+			continue;
+		if(##key == 0x0004 && keypressed == 0){		//起動時に、起動に使ったキーコードを捨てる。
+			##key = 0;
+			continue;
+		}
+		if( ##return  == 0 && ##key & 0x2		//修飾キーを押した直後で何も押されていない。
+		|| (##retF == ##keyF && ##return & 0x2 == 0)		//通常キーが押されなくなった。
+		|| 		//修飾キーの一部が押されなくなった。(通常キーは押下したまま)
+			 ( ##retF < ##keyF
+			&& ##retF & ##keyF != 0
+			&& ##return & 0xFF00 == ##key & 0xFF00))
+		{
+			##key = ##return;
+			##keyF = ##key & 0xF0;
+			##disable_time = #TimeToExit;
+			continue;
+		}
+		##key = ##return;
+		##keyF = ##key & 0xF0;
+
+		//ファンクションキーを表示
+		if(##key & 0x2 == 0){
+			call disp_fkey ##key & 0xF0 / 0x10, ##hdlOP;
+			// 終わるまでの時間を再設定する。
+			##now = tickcount;
+			continue;
+		}
+		##disable_time = #TimeToExec;
+
+		// 文字キーのコード上位2バイトを、その文字(印字)に変換する。0x08FF→"Bksp"みたいに。
+		$$keychar = getinistr($Rscfile, "Code2Str", hex(##key / 0x100));
+
+		// KEY.TXTから、そのキーに対応するコマンド名を取得}する。
+		##i = 0;		//LoopCounter=修飾キーのコード=配列の添え字
+		while(##i <= 7/*修飾キーコードの最大値*/){
+			call get_func $ModTbl[1][##i] + $$keychar, #FuncNameLength;
+			$FuncTbl[##i] = $$return;
+			##i = ##i + 1;
+		}
+		call get_func "", #FuncNameLength, $$keychar + "キー　　　";
+		$FuncTbl[8] = $$return;
+
+		// 出力する。
+		##z = sendmessage(##hdlOP, 0x111, 1009/*クリア*/, 0);
+		##l = 1;		//LoopCounter=現在の行数
+		##lim = val($$template[##key & 0xF0 / 0x10][0]);		//ループ終了値=テンプレート行数
+		while(##l <= ##lim){
+			call replace_atmark $$template[##key & 0xF0 / 0x10][##l], #FuncNameLength;
+			if(!dllfunc("Output", hidemaruhandle(0), $$return + leftstr("\n", (##l != ##lim))/*最終行は改行しない*/))
+				call end_macro "Output枠への出力";
+			##l = ##l + 1;
+		}
+
+		// 終わるまでの時間を再設定する。
+		##now = tickcount;
+	}		//** while( tickcount <= ##now + ##disable_time) **
+
+
+EXIT:
+// 終了処理。
+
+		##z = sendmessage(##hdlOP, 0x111, 1009/*クリア*/, 0);
+
+	// 押さえている通常キーをあげるまで終了しない。
+	if(##disable_time == #TimeToExec){
+		if(dllfunc("Output", hidemaruhandle(0),
+							$ModTbl[1][##key & 0xF0 / 0x10] + $$keychar + " キーを押下し続けて、"
+							+ str(##disable_time/1000) + "秒が経過しました。\n") == false
+		|| dllfunc("Output", hidemaruhandle(0),
+							"    " + $FuncTbl[##key & 0xF0 / 0x10] + "\n") == false
+		|| dllfunc("Output", hidemaruhandle(0),
+									"を実行します。今押さえているキー(" + $$keychar+ ")を放してください。\n") == false)
+			call end_macro "Output枠への出力";
+		##return = 2;
+		while(##return & 0x2 != 0){
+			call get_key_status;
+		}
+	}
+
+	// アウトプット枠、DLLの終了処理。
+	if(##IsOpenOP){
+		if(!dllfunc("Pop", hidemaruhandle(0)))
+			call end_macro "Output枠の内容の復元";
+	}else{
+		//#z = sendmessage(hidemaruhandle(0), 273, 465, 0);		// アウトプット枠を閉じる。
+		##z = sendmessage(##hdlOP, 0x111, 1009/*クリア*/, 0);
+		##z = sendmessage(##hdlOP, 0x111, 1001/*枠を閉じる*/, 0);
+	}
+	freedll;
+
+	// コマンド名が空白じゃないときは、キーコードを発行する=同梱のJScriptを呼び出す。
+	if(##disable_time == #TimeToExec && $FuncTbl[##key & 0xF0 / 0x10] != "　　　　　"){
+		run "wscript.exe " + currentmacrofilename + ".js /mod:" + str(##key & 0xF0 / 0x10) + " /key:" + $$keychar;
+	}
+
+endmacro;
+
+get_key_status:
+//arg:
+//ret:#キーコード(0x0001=修飾キー有,0x0002=通常キー有,0x0010=Shift,0x0020=Ctrl,0x0040=Alt,0x0100～0xFE00=キーコード(16～18をのぞく)。
+
+	##ret = 0x0000;
+	##c = 1;																// キーコード
+	while( ##c <= 0x7B/*F12*/ ){
+		if( iskeydown( ##c ) ){
+			if( 0x10 <= ##c && ##c <= 0x12)			// 16≦##c≦18 : 修飾キー
+				##ret = ##ret | 0x0001
+						| (0x0010 * ( ##c == 0x10 ))	// Shift
+						| (0x0020 * ( ##c == 0x11 ))	// Ctrl
+						| (0x0040 * ( ##c == 0x12 ));	// Alt
+			else	##ret = ##ret | (##c * 0x0100) | 0x0002;
+		}
+		##c = ##c + 1;
+	}
+	if( ##ret & 0x2 )	return ##ret;
+
+	// 記号部分の探査
+	##c = 0xBA;																// 文字キーのうちの最初の記号 :*
+	while( ##c <= 0xE2/*\_ろ と刻印のあるキー*/ ){
+		if( iskeydown( ##c ) ){
+			##ret = ##ret | (##c * 0x0100) | 0x0002;
+		}
+		##c = ##c + 1;
+	}
+
+	debuginfo "get_key_status: " + hex(##ret) + " :S" + hex(##ret & 0x0010) + ":C" + hex(##ret & 0x0020) + ":A" + hex(##ret & 0x0040);
+
+return ##ret;
+
+get_func:
+//キーのコマンド名を取得する。指定文字数を超過する部分(全角文字で2バイト目が超過する場合はその文字を含む)を削除。コマンド名が指定文字数以下の場合は指定文字数になるように末尾に(なるべく全角の)空白を挿入。また、第3引数に任意の文字を指定したときは、その文字を指定文字数になるようにする(キー名用)。
+//arg: $キー名, #文字数(半角。最大20文字だがチェックしない), $任意の文字列
+//Arg: $KEYTXT
+//ret: $第1引数のキーに割り当てられたコマンド名。
+
+	$$ret = $$3;
+	if($$ret == "")
+		$$ret = getinistr($KEYTXT, "", $$1) + /*表示幅合わせ*/"　　　　　　　　　　";
+	$$ret = leftstr($$ret, ##2 - (charindex_to_byteindex($$ret, ##2) != ##2)/*##2が全角の1バイト目の時、1バイト=半角1文字減らす*/)		//指定文字数で切り詰める
+				+ leftstr(" ", (charindex_to_byteindex($$ret, ##2) != ##2));		//減らしたら半角空白を追加
+
+return $$ret;
+
+replace_atmark:
+//押下されている修飾キーに対応するテンプレ文中の"@数字"を、キーのコマンド名に置換する。
+//arg: $テンプレート(の文字列)。#コマンド名の長さ(半角換算)
+//ret: $テンプレート中の@とその次の数字をキーのコマンド名に置き換えた文字列。
+
+	##pp = 0;
+	##p = strstr($$1, "@");
+	while(##p != -1){
+		$$ret = $$ret
+					+ midstr($$1, ##pp, ##p - ##pp)		//行の先頭or前の@から10文字 以降の文字列
+					+ $FuncTbl[val(midstr($$1, ##p + 1, 1))];		//コマンド名
+		##pp = ##p + ##2;		//コマンド名の長さ分、テンプレートを読み飛ばす。
+		##p = strstr($$1, "@", ##pp);
+	}
+	$$ret = $$ret + midstr($$1, ##pp, );		//行の残り
+
+return $$ret;
+
+make_dat:
+// .datファイルを作る
+//arg: #FSOのオブジェクト
+//use: #MakeDat, #FuncNameLength
+//ret:
+
+	// .datファイルを設定
+	$$dat = currentmacrofilename + ".dat";
+	if(existfile($$dat, 1) & 0x01/*読み取り専用*/){
+		message $$dat + "が読み取り専用になっているため、更新せずに実行します。";
+		return $$dat;
+	}
+
+	// キー割り当ての更新を確認。
+	##changed = true;
+	if(#MakeDat & 0xF00){
+		if(existfile($$dat)){
+			$$dmlDat = member(callmethod_returnobj(##1, "GetFile", $$dat), "DateLastModified");
+			$$dmlKEY = member(callmethod_returnobj(##1, "GetFile", $KEYTXT), "DateLastModified");
+			##i = 0;
+			while(##i <= 19){
+				if(val(wcsmidstr($$dmlKEY, ##i, 2)) < val(wcsmidstr($$dmlDat, ##i, 2)))		// datの方が新しい。
+					##changed = false;
+				if(val(wcsmidstr($$dmlKEY, ##i, 2)) != val(wcsmidstr($$dmlDat, ##i, 2)))
+					break;
+				##i = ##i + 3;
+			}
+		}
+	}
+
+	// 問い合わせ
+	if((#MakeDat & 0x1 && #MakeDat & 0x10 && ##changed)
+	|| (#MakeDat & 0x2 && #MakeDat & 0x20 && ##changed == false)){
+		question $mn + "\ndatファイル(このマクロが使うデータファイル)を、" + $$dat + "として作りますよ。";
+		if(!result)
+			return leftstr($$dat, existfile($$dat) * strlen($$dat));
+	}
+
+	// 実際に作成
+	if((#MakeDat & 0x1 && ##changed)
+	|| (#MakeDat & 0x2 && ##changed == false))		title $mn + "データファイルを作成中。";
+	else		return leftstr($$dat, existfile($$dat) * strlen($$dat));
+	##hdlThis = hidemaruhandle(0);
+	openfile "/n /h " + $$dat;
+	##hdlDat = hidemaruhandle(0);
+	//元の内容を削除
+	selectall;
+	delete;
+	//KEY.TXTの内容を読み込み
+	insert "[]\n";
+	insertfile $KEYTXT;
+	//範囲選択
+	gofiletop;
+	beginsel;
+	searchdown2 "^$", regular;
+	##sep_ln = lineno;
+	//「ﾏｸﾛ(数字):」「(標準の動作:」「ﾒﾆｭｰ(数字):」を削除。
+	replaceallfast "(?<= = )(ﾏｸﾛ[0-9]+:|\\(標準の動作:|ﾒﾆｭｰ[0-9]+:)", "", regular, inselect;
+	//カタカナをすべて半角に
+	gofiletop;
+	beginsel;
+	movetolineno 0, ##sep_ln;
+	filter "", "ToHankakuAlnum";
+	gofiletop;
+	beginsel;
+	movetolineno 0, ##sep_ln;
+	filter "", "ToHankakuKataOnly";
+	//filter "", "ToHankaku";
+	//ひらがなを削除
+	replaceallfast "[ぁ-ん]+", "", regular, inselect;
+	escape;
+	//共通ショートカットキーリストを追加読み込み: どうやらファイル末尾側の設定は使われないようだ
+	movetolineno 0, ##sep_ln;
+	insertfile currentmacrodirectory + "\\commonkey.list";
+	//[ ]改行 を挿入: 余計な(メニュー)部分を読み出さないようにするため
+	insert "[ ]\n";
+	//保存して終了
+	save;
+	setactivehidemaru ##hdlThis;
+	closehidemaru ##hdlDat;
+
+return $$dat;
+
+disp_fkey:
+//ファンクションキーみたいなものを表示する。
+//arg: #0x表示する修飾キーコード, #OutPutPaneのハンドル
+//ret:
+
+	##z = sendmessage(##2, 0x111, 1009/*クリア*/, 0);
+	##fname_length = 10;		// コマンド名の最大長
+	$$fkey_sep = "|";				// 各ファンクションキー間のセパレータ
+
+	//ヘッダ
+	$$header = 							// ヘッダ。先頭は全角1文字分。各キーは##fname_lengthと同じ幅で、その間は$$fkey_sepと同じ文字列。
+		"FK|　　１　　|　　２　　|　　３　　|　　４　　|　　５　　|　　６　　|　　７　　|　　８　　|　　９　　|　　10　　|　　11　　|　　12　　|";
+	if(!dllfunc("Output", hidemaruhandle(0), $$header + "\n"))
+		call end_macro "Output枠への出力";
+
+	##m = ##1 + (##1 == 0) * #FbarCol/*修飾キーがないときに起動時と同じ組み合わせ*/;		//LoopCounter=表示する修飾キーコード
+	$$out = "";		//出力される文字列
+	$$mod = "";		//修飾キー
+	while(##m != 0){
+		$$out = $ModTbl[0][##m % 0x10/*最下位桁*/];		//"##m & 0xF"とやると遅くなった。
+		$$mod = $ModTbl[1][##m % 0x10/*最下位桁*/];
+		##f = 1;		//LoopCounter＝ファンクションキーの数字
+		while(##f <= 12/*ファンクションキーの最大(F12)*/){
+			call get_func $$mod + "F" + str(##f), ##fname_length;
+			$$out = $$out + $$fkey_sep + $$return;
+			##f = ##f + 1;
+		}
+		if(!dllfunc("Output", hidemaruhandle(0), $$out + "\n"))
+			call end_macro "Output枠への出力";
+		##m = ##m / 0x10;		//上位桁へ
+	}
+
+return;
+
+end_macro:
+// マクロの終了処理。
+//arg: $メッセージ, #objFSO
+//ret:
+
+	freedll;
+	if(##2)
+		releaseobject ##2;
+	if($$1 != ""){
+		message $mn + "\nマクロ中断: " + $$1 + "に失敗しました。";
+		endmacro "1";
+	}
+
+return;
