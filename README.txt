@@ -94,7 +94,7 @@ http://hide.maruo.co.jp/lib/macro/dispkeyfunc.html
  　見つからない場合は、以下のURLから「dispkeyfunc」などで検索してみてください。
 http://hide.maruo.co.jp/lib/macro/index.html
 
- 　また、以下のURLからもダウンロードできます。「download」ボタンをクリックして、"ZIP"を選択してください。
+ 　また、以下のURLからもダウンロードできます。
 http://github.com/taketori/dispkeyfunc/downloads
  　gitのリポジトリも公開しています。
 
