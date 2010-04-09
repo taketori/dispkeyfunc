@@ -102,12 +102,11 @@ MAIN:
 
 	// アウトプット枠の初期表示
 	call disp_fkey #FbarCol, ##hdlOP;
-	if(dllfunc("Output", hidemaruhandle(0), "\n") == false
-	|| dllfunc("Output", hidemaruhandle(0), "\n") == false
-	|| dllfunc("Output", hidemaruhandle(0), "= - " + $mn + "=\n") == false
-	|| dllfunc("Output", hidemaruhandle(0), "   ショートカットキーとその機能は、KEY.TXTの内容を元に表示しています。\n") == false
-	|| dllfunc("Output", hidemaruhandle(0), "   KEY.TXTを更新するには、[キー割り当て]ダイアログの「一覧表作成」ボタンをクリックで。\n") == false
-	|| dllfunc("Output", hidemaruhandle(0), "   (詳細は、秀丸エディッタヘルプの\"KEY.TXT\"を参照)") == false)
+	if(!dllfunc("Output", hidemaruhandle(0),
+		"\r\n\r\n= - " + $mn + "=\r\n"
+		+ "   ショートカットキーとその機能は、KEY.TXTの内容を元に表示しています。\r\n"
+		+ "   KEY.TXTを更新するには、[キー割り当て]ダイアログの「一覧表作成」ボタンをクリックで。\r\n"
+		+ "   (詳細は、秀丸エディッタヘルプの\"KEY.TXT\"を参照)"))
 		call end_macro "Output枠への出力";
 
 	##key = 0x0004;
@@ -186,16 +185,15 @@ EXIT:
 
 	// 押さえている通常キーをあげるまで終了しない。
 	if(##disable_time == #TimeToExec){
-		if(dllfunc("Output", hidemaruhandle(0),
+		if(!dllfunc("Output", hidemaruhandle(0),
 							$ModTbl[1][##key & 0xF0 / 0x10] + $$keychar + " キーを押下し続けて、"
-							+ str(##disable_time/1000) + "秒が経過しました。\n") == false
-		|| dllfunc("Output", hidemaruhandle(0),
-							"    " + $FuncTbl[##key & 0xF0 / 0x10] + "\n") == false
-		|| dllfunc("Output", hidemaruhandle(0),
-									"を実行します。今押さえているキー(" + $$keychar+ ")を放してください。\n") == false)
+							+ str(##disable_time/1000) + "秒が経過しました。\r\n"
+							+ "    " + $FuncTbl[##key & 0xF0 / 0x10] + "\r\n"
+							+ "を実行します。今押さえているキー(" + $$keychar+ ")を放してください。\r\n")){
 			call end_macro "Output枠への出力";
+		}
 		##return = 2;
-		while(##return & 0x2 != 0){
+		while(##return & 0x2){
 			call get_key_status;
 		}
 	}
@@ -376,15 +374,13 @@ disp_fkey:
 
 	//ヘッダ
 	$$header = 							// ヘッダ。先頭は全角1文字分。各キーは##fname_lengthと同じ幅で、その間は$$fkey_sepと同じ文字列。
-		"FK|　　１　　|　　２　　|　　３　　|　　４　　|　　５　　|　　６　　|　　７　　|　　８　　|　　９　　|　　10　　|　　11　　|　　12　　|";
-	if(!dllfunc("Output", hidemaruhandle(0), $$header + "\n"))
-		call end_macro "Output枠への出力";
+		"FK|　　１　　|　　２　　|　　３　　|　　４　　|　　５　　|　　６　　|　　７　　|　　８　　|　　９　　|　　10　　|　　11　　|　　12　　|\r\n";
 
 	##m = ##1 + (##1 == 0) * #FbarCol/*修飾キーがないときに起動時と同じ組み合わせ*/;		//LoopCounter=表示する修飾キーコード
-	$$out = "";		//出力される文字列
+	$$out = $$header;		//出力される文字列
 	$$mod = "";		//修飾キー
 	while(##m != 0){
-		$$out = $ModTbl[0][##m % 0x10/*最下位桁*/];		//"##m & 0xF"とやると遅くなった。
+		$$out = $$out + $ModTbl[0][##m % 0x10/*最下位桁*/];		//"##m & 0xF"とやると遅くなった。
 		$$mod = $ModTbl[1][##m % 0x10/*最下位桁*/];
 		##f = 1;		//LoopCounter＝ファンクションキーの数字
 		while(##f <= 12/*ファンクションキーの最大(F12)*/){
@@ -392,10 +388,12 @@ disp_fkey:
 			$$out = $$out + $$fkey_sep + $$return;
 			##f = ##f + 1;
 		}
-		if(!dllfunc("Output", hidemaruhandle(0), $$out + "\n"))
-			call end_macro "Output枠への出力";
+		$$out = $$out + "\r\n";
 		##m = ##m / 0x10;		//上位桁へ
 	}
+
+	if(!dllfunc("Output", hidemaruhandle(0), $$out))
+		call end_macro "Output枠への出力";
 
 return;
 
