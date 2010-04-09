@@ -76,6 +76,7 @@ INIT:
 	if(!getresultex(10))		call end_macro $Template "のクローズ";
 
 	// アウトプット枠を使うための準備。
+	#hdl = hidemaruhandle(0);
 	loaddll "HmOutputPane.dll";
 	if(!result)		call end_macro "HmOutputPane.dllの読み込み";
 	##IsOpenOP = true;
@@ -201,6 +202,7 @@ EXIT:
 	}
 
 	// アウトプット枠、DLLの終了処理。
+	setfocus 1;
 	if(##IsOpenOP){
 		if(!dllfunc("Pop", hidemaruhandle(0)))
 			call end_macro "Output枠の内容の復元";
@@ -211,9 +213,12 @@ EXIT:
 	}
 	freedll;
 
-	// コマンド名が空白じゃないときは、キーコードを発行する=同梱のJScriptを呼び出す。
+	// コマンド名が空白じゃないときは、キーコードを発行する。
+	//setactivehidemaru #hdl;
 	if(##disable_time == #TimeToExec && $FuncTbl[##key & 0xF0 / 0x10] != "　　　　　"){
-		run "wscript.exe " + currentmacrofilename + ".js /mod:" + str(##key & 0xF0 / 0x10) + " /key:" + $$keychar;
+		//call exec_keys ##key & 0xF0 / 0x10, $$keychar;
+		execmacro currentmacrodirectory + "\\dispkeyfunc3.mac.sub.mac", str(##key & 0xF0 / 0x10), $$keychar, $Rscfile;
+		//run "wscript.exe " + currentmacrofilename + ".js /mod:" + str(##key & 0xF0 / 0x10) + " /key:" + $$keychar;
 	}
 
 endmacro;
@@ -396,6 +401,38 @@ disp_fkey:
 			call end_macro "Output枠への出力";
 		##m = ##m / 0x10;		//上位桁へ
 	}
+
+return;
+
+exec_keys:
+// キーコードを発行する。
+//arg: #修飾キーコード, $キー名
+//ret:
+
+	// #修飾キーコード→SendKeysに変換するテーブル
+	$$tblMod[0] = "";			$$tblMod[1] = "+";
+	$$tblMod[2] = "^";		$$tblMod[3] = "(+^)";
+	$$tblMod[4] = "%";		$$tblMod[5] = "(%+)";
+	$$tblMod[6] = "(^%)";	$$tblMod[7] = "(+^%)";
+
+	// 修飾キー以外の部分を変換。
+	$$key = getinistr($Rscfile, "SENDKEYS", $$2);
+	if($$key == "")		$$key = rightstr($$2, 1);
+
+	// COMで発行する。
+	// WScript.Shellオブジェクト。作れない場合は同梱のJScriptで発行する。
+	##shell = createobject("WScript.Shell");
+	if(!##shell){
+		run "wscript.exe " + currentmacrofilename + ".js /mod:" + str(##1) + " /key:" + $$2;
+		return;
+	}
+	$msg = $msg + "A:" + hex(getresultex(10)) + "=" + hex(getresultex(11)) + "|";
+	//callmethod ##shell, "SendKeys", $$tblMod[##1] + $$key;
+	callmethod ##shell, "SendKeys", "a";//$$tblMod[##1] + $$key;
+	$msg = $msg + "B:" + hex(getresultex(10)) + "=" + hex(getresultex(11)) + "|";
+	releaseobject ##shell;
+	title $$tblMod[##1] + $$key + " " + $msg ;
+	title -1;
 
 return;
 
